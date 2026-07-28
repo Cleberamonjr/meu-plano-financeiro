@@ -191,6 +191,34 @@
   .nav-in{max-width:480px;margin:0 auto;display:flex}
   .nav button{flex:1;background:none;border:none;color:var(--faint);cursor:pointer;padding:6px;display:flex;flex-direction:column;align-items:center;gap:3px;font-family:var(--sans);font-size:11px;font-weight:600}
   .nav button .ic{font-size:20px;line-height:1}
+  .nav button{font-size:10.5px}
+  /* ---- contas ---- */
+  .cbanner{background:linear-gradient(160deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+  .cbanner .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .cbanner .big{font-family:var(--serif);font-size:30px;font-weight:600;margin:3px 0}
+  .cbanner .sub{font-size:12.5px;color:var(--muted)}
+  .csec{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;margin:18px 4px 9px;display:flex;align-items:center;gap:9px}
+  .csec .bar{height:1px;flex:1;background:var(--line)}
+  .conta{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--faint);border-radius:12px;padding:13px 14px;margin-bottom:8px}
+  .conta.pago{opacity:.5;border-left-color:var(--in)}
+  .conta.urgente{border-left-color:var(--out)}
+  .conta.logo{border-left-color:var(--gold)}
+  .conta .ck{flex:0 0 auto;width:24px;height:24px;border-radius:7px;border:1.5px solid var(--faint);display:grid;place-items:center;cursor:pointer;transition:.15s}
+  .conta.pago .ck{background:var(--in);border-color:var(--in)}
+  .conta .ck svg{width:13px;height:13px;stroke:var(--ink);stroke-width:3.2;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+  .conta.pago .ck svg{opacity:1}
+  .conta .info{flex:1;min-width:0}
+  .conta .nm{font-size:14.5px;font-weight:600}
+  .conta.pago .nm{text-decoration:line-through}
+  .conta .due{font-size:12px;margin-top:1px}
+  .conta .due.d0{color:var(--out);font-weight:600}
+  .conta .due.d1{color:var(--gold)}
+  .conta .due.d2{color:var(--muted)}
+  .conta .val{font-family:var(--serif);font-size:15px;font-weight:600;white-space:nowrap;text-align:right}
+  .conta .val .ed{display:block;font-size:11px;color:var(--blue);font-weight:400;text-decoration:underline}
+  .addconta{width:100%;background:var(--ink-2);border:1px dashed var(--line);color:var(--muted);border-radius:12px;padding:12px;font-family:var(--sans);font-size:13.5px;cursor:pointer;margin-top:4px}
+  .addconta:active{background:var(--panel)}
+  .cnote{font-size:12px;color:var(--faint);text-align:center;margin:14px 8px 0;line-height:1.5}
   .nav button.on{color:var(--in)}
 
   /* ---- sheet ---- */
@@ -292,12 +320,18 @@
     <div id="dashBody"></div>
   </div>
 
+  <!-- ============ CONTAS ============ -->
+  <div class="view" id="viewContas">
+    <div id="contasBody"></div>
+  </div>
+
   <div class="hint" id="installHint"></div>
 </div>
 
 <!-- nav -->
 <div class="nav"><div class="nav-in">
   <button id="navPlano" class="on"><span class="ic">🎯</span>Plano</button>
+  <button id="navContas"><span class="ic">📅</span>Contas</button>
   <button id="navCaixa"><span class="ic">💰</span>Caixa</button>
   <button id="navPainel"><span class="ic">📊</span>Painel</button>
 </div></div>
@@ -777,21 +811,164 @@ function renderPainel(){
   box.innerHTML=html;
 }
 
+/* ================= CONTAS (calendário de compromissos) ================= */
+// tipos de vencimento: fixo (dia do mês) | dias (a cada N dias) | flex (meta de dia, sem obrigação fixa)
+const BILLS_DEFAULT=[
+  {id:'b_aluguel', nm:'Aluguel / Moradia', cur:'CNY', amt:3500, kind:'fixo', dia:15, quem:'Andressa'},
+  {id:'b_escola',  nm:'Escola Jasmim',    cur:'CNY', amt:3700, kind:'fixo', dia:28, quem:'Clebe'},
+  {id:'b_pensao',  nm:'Pensão Violeta',   cur:'BRL', amt:840,  kind:'fixo', dia:28, quem:'Clebe'},
+  {id:'b_kaiting', nm:'Caixinha (Kaiting)',cur:'CNY',amt:600,  kind:'dias', cada:10, quem:'Clebe'},
+  {id:'b_amdick',  nm:'Amanda Dick',      cur:'BRL', amt:700,  kind:'flex', metaDia:10, quem:'Clebe'},
+  {id:'b_amcarlos',nm:'Amanda Carlos',    cur:'BRL', amt:0,    kind:'flex', metaDia:15, quem:'Clebe'},
+  {id:'b_v4',      nm:'Kaio V4',          cur:'BRL', amt:500,  kind:'flex', metaDia:20, quem:'Clebe'},
+];
+if(!S.bills){ S.bills = JSON.parse(JSON.stringify(BILLS_DEFAULT)); }
+if(!S.pagos){ S.pagos = {}; } // { 'b_id|2026-07': true }
+
+let ccur=(function(){const p=periodStartOf(new Date());return{y:p.y,m:p.m};})();
+function mkey(p){ return p.y+'-'+String(p.m+1).padStart(2,'0'); }
+
+// próxima data de vencimento dentro do ciclo exibido
+function dueDate(b){
+  if(b.kind==='fixo'){ return new Date(ccur.y, ccur.m, Math.min(b.dia,28)); }
+  if(b.kind==='flex'){ return new Date(ccur.y, ccur.m, Math.min(b.metaDia,28)); }
+  return null; // 'dias' é recorrente, tratado à parte
+}
+function daysUntil(d){ const h=new Date(); h.setHours(0,0,0,0); return Math.round((d-h)/86400000); }
+function dueLabel(n){
+  if(n<0) return {t:`venceu há ${-n} d`, c:'d0'};
+  if(n===0) return {t:'vence HOJE', c:'d0'};
+  if(n===1) return {t:'vence amanhã', c:'d1'};
+  if(n<=5) return {t:`em ${n} dias`, c:'d1'};
+  return {t:`em ${n} dias`, c:'d2'};
+}
+
+function renderContas(){
+  const box=document.getElementById('contasBody');
+  const mk=mkey(ccur);
+  const isPago=b=> !!S.pagos[b.id+'|'+mk];
+
+  // total pendente do ciclo (em ¥ equiv)
+  let pend=0, total=0;
+  S.bills.forEach(b=>{ const eq=b.cur==='CNY'?b.amt:b.amt*S.rate; total+=eq; if(!isPago(b)) pend+=eq; });
+
+  const nome=MONTHS[ccur.m]+' '+ccur.y;
+  let html=`<div class="mnav"><button id="cPrev">‹</button><div class="cur"><div class="nm">${nome}</div><div class="rg">compromissos do ciclo</div></div><button id="cNext">›</button></div>`;
+
+  html+=`<div class="cbanner"><div class="k">Ainda falta pagar neste ciclo</div>
+    <div class="big" style="color:${pend>0?'var(--out)':'var(--in)'}">¥ ${fmt(pend)}</div>
+    <div class="sub">de ¥${fmt(total)} em compromissos · ${pend>0?'distribua ao longo do mês':'tudo pago ✓'}</div></div>`;
+
+  // ordena por urgência: fixos/flex por data, recorrente no topo se vencido
+  const fixos=S.bills.filter(b=>b.kind!=='dias').map(b=>{
+    const d=dueDate(b); return {b, d, n:daysUntil(d)};
+  }).sort((a,b)=> (isPago(a.b)-isPago(b.b)) || (a.n-b.n));
+
+  // recorrente (Kaiting)
+  const rec=S.bills.filter(b=>b.kind==='dias');
+
+  const chk=`<svg viewBox="0 0 24 24"><polyline points="4 12 10 18 20 6"/></svg>`;
+
+  // DATA FIXA
+  html+=`<div class="csec">📌 Data marcada<span class="bar"></span></div>`;
+  fixos.filter(x=>x.b.kind==='fixo').forEach(x=>{
+    const b=x.b, pago=isPago(b), lab=dueLabel(x.n);
+    html+=`<div class="conta${pago?' pago':''}${(!pago&&x.n<=1)?' urgente':''}" data-pay="${b.id}">
+      <div class="ck">${chk}</div>
+      <div class="info"><div class="nm">${b.nm}</div><div class="due ${pago?'d2':lab.c}">${pago?'pago ✓':'dia '+b.dia+' · '+lab.t}</div></div>
+      <div class="val">${sym(b.cur)}${fmt(b.amt)}<span class="ed" data-edit="${b.id}">editar valor</span></div></div>`;
+  });
+
+  // RECORRENTE
+  if(rec.length){
+    html+=`<div class="csec">🔁 A cada 10 dias<span class="bar"></span></div>`;
+    rec.forEach(b=>{
+      html+=`<div class="conta logo" data-payrec="${b.id}">
+        <div class="ck" style="border-color:var(--gold)">${chk}</div>
+        <div class="info"><div class="nm">${b.nm}</div><div class="due d2">toque a cada pagamento pra registrar no Caixa</div></div>
+        <div class="val">${sym(b.cur)}${fmt(b.amt)}<span class="ed" data-edit="${b.id}">editar</span></div></div>`;
+    });
+  }
+
+  // FLEX / URGENTE
+  html+=`<div class="csec">⏳ Sem data fixa, mas urgente<span class="bar"></span></div>`;
+  fixos.filter(x=>x.b.kind==='flex').forEach(x=>{
+    const b=x.b, pago=isPago(b), lab=dueLabel(x.n);
+    html+=`<div class="conta${pago?' pago':' urgente'}" data-pay="${b.id}">
+      <div class="ck">${chk}</div>
+      <div class="info"><div class="nm">${b.nm}</div><div class="due ${pago?'d2':lab.c}">${pago?'pago ✓':'meta: pagar até dia '+b.metaDia+' · '+lab.t}</div></div>
+      <div class="val">${b.amt>0?sym(b.cur)+fmt(b.amt):'—'}<span class="ed" data-edit="${b.id}">${b.amt>0?'editar valor':'pôr valor'}</span></div></div>`;
+  });
+
+  html+=`<div class="cnote">Marcar como pago registra a saída no Caixa automaticamente. A distribuição das datas evita que tudo caia junto no fim do mês.</div>`;
+
+  box.innerHTML=html;
+
+  // navegação
+  document.getElementById('cPrev').onclick=()=>{ccur.m--;if(ccur.m<0){ccur.m=11;ccur.y--;}renderContas();};
+  document.getElementById('cNext').onclick=()=>{ccur.m++;if(ccur.m>11){ccur.m=0;ccur.y++;}renderContas();};
+
+  // marcar pago (fixo/flex) -> registra saída + marca
+  box.querySelectorAll('[data-pay]').forEach(el=>{
+    el.querySelector('.ck').onclick=(ev)=>{ ev.stopPropagation(); togglePago(el.dataset.pay); };
+  });
+  // recorrente -> sempre lança uma saída (não "quita", repete)
+  box.querySelectorAll('[data-payrec]').forEach(el=>{
+    el.querySelector('.ck').onclick=(ev)=>{ ev.stopPropagation(); lancarRecorrente(el.dataset.payrec); };
+  });
+  // editar valor
+  box.querySelectorAll('[data-edit]').forEach(el=>{
+    el.onclick=(ev)=>{ ev.stopPropagation(); editarConta(el.dataset.edit); };
+  });
+}
+
+function togglePago(id){
+  const b=S.bills.find(x=>x.id===id); if(!b) return;
+  const mk=mkey(ccur), key=b.id+'|'+mk;
+  if(S.pagos[key]){ // desmarcar: remove o lançamento gerado
+    delete S.pagos[key];
+    S.entries=S.entries.filter(e=>!(e.fromBill===key));
+  } else {
+    if(!(b.amt>0)){ editarConta(id); return; }
+    S.pagos[key]=true;
+    const d=dueDate(b)||new Date();
+    S.entries.push({id:Date.now()+''+Math.random().toString(36).slice(2,6),ts:d.toISOString(),type:'out',cur:b.cur,amount:b.amt,who:b.quem||'Clebe',cat:b.nm,note:'via Contas',fromBill:key,synced:false});
+  }
+  save();renderContas();renderCaixa();renderPlano();renderPainel();sync();
+}
+
+function lancarRecorrente(id){
+  const b=S.bills.find(x=>x.id===id); if(!b||!(b.amt>0)){ editarConta(id); return; }
+  S.entries.push({id:Date.now()+''+Math.random().toString(36).slice(2,6),ts:new Date().toISOString(),type:'out',cur:b.cur,amount:b.amt,who:b.quem||'Clebe',cat:b.nm,note:'via Contas (recorrente)',synced:false});
+  save();renderCaixa();renderPlano();renderPainel();sync();
+  alert(b.nm+': pagamento de '+sym(b.cur)+fmt(b.amt)+' registrado no Caixa.');
+}
+
+function editarConta(id){
+  const b=S.bills.find(x=>x.id===id); if(!b) return;
+  const v=prompt('Valor de "'+b.nm+'" ('+(b.cur==='CNY'?'¥':'R$')+'):', b.amt||'');
+  if(v!==null){ const n=parseFloat(String(v).replace(',','.')); if(!isNaN(n)&&n>=0){ b.amt=n; save();renderContas(); } }
+}
+
 /* ---------- nav ---------- */
 function showView(v){
   document.getElementById('viewPlano').classList.toggle('active',v==='plano');
   document.getElementById('viewCaixa').classList.toggle('active',v==='caixa');
   document.getElementById('viewPainel').classList.toggle('active',v==='painel');
+  document.getElementById('viewContas').classList.toggle('active',v==='contas');
   document.getElementById('navPlano').classList.toggle('on',v==='plano');
   document.getElementById('navCaixa').classList.toggle('on',v==='caixa');
   document.getElementById('navPainel').classList.toggle('on',v==='painel');
-  document.getElementById('topTitle').innerHTML = v==='plano'?'Meu <span>Plano</span>':(v==='caixa'?'Meu <span>Caixa</span>':'Meu <span>Painel</span>');
+  document.getElementById('navContas').classList.toggle('on',v==='contas');
+  document.getElementById('topTitle').innerHTML = v==='plano'?'Meu <span>Plano</span>':(v==='caixa'?'Meu <span>Caixa</span>':(v==='painel'?'Meu <span>Painel</span>':'Minhas <span>Contas</span>'));
   if(v==='painel'){ dcur={y:cur.y,m:cur.m}; renderPainel(); }
+  if(v==='contas'){ renderContas(); }
   window.scrollTo(0,0);
 }
 document.getElementById('navPlano').onclick=()=>showView('plano');
 document.getElementById('navCaixa').onclick=()=>showView('caixa');
 document.getElementById('navPainel').onclick=()=>showView('painel');
+document.getElementById('navContas').onclick=()=>showView('contas');
 document.getElementById('pPrev').onclick=()=>{dcur.m--;if(dcur.m<0){dcur.m=11;dcur.y--;}renderPainel();};
 document.getElementById('pNext').onclick=()=>{dcur.m++;if(dcur.m>11){dcur.m=0;dcur.y++;}renderPainel();};
 
@@ -807,11 +984,11 @@ document.getElementById('expCsv').onclick=()=>{let csv='Data;Quem;Tipo;Moeda;Val
 document.getElementById('expJson').onclick=()=>download('meu_plano_backup.json',JSON.stringify(S,null,2),'application/json');
 document.getElementById('impBtn').onclick=()=>document.getElementById('impFile').click();
 document.getElementById('impFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);
-  if(d && (Array.isArray(d.entries)||d.checks)){ S={checks:d.checks||{},reserva:d.reserva||0,goal:d.goal||3000,entries:Array.isArray(d.entries)?d.entries:[],rate:d.rate||1.30,cycleDay:d.cycleDay||15};
-    save();const p=periodStartOf(new Date());cur={y:p.y,m:p.m};renderPlano();renderCaixa();sheetBg.classList.remove('open');alert('Backup restaurado.'); }
+  if(d && (Array.isArray(d.entries)||d.checks)){ S={checks:d.checks||{},reserva:d.reserva||0,goal:d.goal||3000,entries:Array.isArray(d.entries)?d.entries:[],rate:d.rate||1.30,cycleDay:d.cycleDay||15,bills:d.bills||JSON.parse(JSON.stringify(BILLS_DEFAULT)),pagos:d.pagos||{}};
+    save();const p=periodStartOf(new Date());cur={y:p.y,m:p.m};renderPlano();renderCaixa();renderPainel();renderContas();sheetBg.classList.remove('open');alert('Backup restaurado.'); }
   else if(Array.isArray(d.entries)){ S.entries=d.entries;save();renderCaixa();alert('Lançamentos restaurados.'); }
 }catch(err){alert('Arquivo inválido.');}};r.readAsText(f);};
-document.getElementById('wipe').onclick=()=>{if(confirm('Apagar TUDO deste aparelho (plano, reserva e lançamentos)? Não dá pra desfazer.')){S={checks:{},reserva:0,goal:3000,entries:[],rate:1.30,cycleDay:15};save();renderPlano();renderCaixa();sheetBg.classList.remove('open');}};
+document.getElementById('wipe').onclick=()=>{if(confirm('Apagar TUDO deste aparelho (plano, reserva e lançamentos)? Não dá pra desfazer.')){S={checks:{},reserva:0,goal:3000,entries:[],rate:1.30,cycleDay:15,bills:JSON.parse(JSON.stringify(BILLS_DEFAULT)),pagos:{}};save();renderPlano();renderCaixa();renderPainel();renderContas();sheetBg.classList.remove('open');}};
 
 /* ---------- install hint ---------- */
 (function(){const standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone;
@@ -829,7 +1006,7 @@ document.getElementById('sbSave').onclick=async()=>{
 };
 
 document.getElementById('date').valueAsDate=new Date();
-setWho('Clebe');setType('in');setCur();renderPlano();renderCaixa();renderPainel();
+setWho('Clebe');setType('in');setCur();renderPlano();renderCaixa();renderPainel();renderContas();
 if(cloudOn()){ document.getElementById('sbUrl').value=cloud.url; document.getElementById('sbKey').value=cloud.key; sync(); setInterval(sync, 60000); }
 </script>
 </body>
